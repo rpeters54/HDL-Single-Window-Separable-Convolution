@@ -46,6 +46,16 @@ module line_buffer #(
     );
 
 
+    reg [31:0] counter;
+
+    always @(posedge i_clk) begin
+        if (i_rst) begin
+            counter <= 0;
+        end else if (i_rdy && o_vld) begin
+            counter <= counter + 1;
+        end
+    end
+
     ////////////////////////////////////////////////
     // input demux
     ////////////////////////////////////////////////
@@ -62,10 +72,10 @@ module line_buffer #(
     reg [DATA_W-1:0]    w_data_dly, w_data_dly_next;
     reg [PTR_W-1:0]     w_row_ptr, w_row_ptr_next, w_row_ptr_prev;
     reg [CNT_W-1:0]     w_col_cnt, w_col_cnt_next;
-    reg                 w_primed, w_primed_next;
     reg                 o_vld_next;
     reg                 o_eof_next;
     reg                 w_bank_update;
+    reg                 w_bank_read;
 
     always @(posedge i_clk) begin
         if (i_rst) begin
@@ -73,7 +83,6 @@ module line_buffer #(
             w_row_ptr_prev <= 0;
             w_row_ptr      <= 0;
             w_col_cnt      <= 0;
-            w_primed       <= 0;
             w_data_dly     <= 0;
             o_vld          <= 0;
             o_eof          <= 0;
@@ -82,7 +91,6 @@ module line_buffer #(
             w_row_ptr_prev <= w_row_ptr;
             w_row_ptr      <= w_row_ptr_next;
             w_col_cnt      <= w_col_cnt_next;
-            w_primed       <= w_primed_next;
             w_data_dly     <= w_data_dly_next;
             o_vld          <= o_vld_next;
             o_eof          <= o_eof_next;
@@ -93,147 +101,118 @@ module line_buffer #(
         w_state_next    = w_state;
         w_row_ptr_next  = w_row_ptr;
         w_col_cnt_next  = w_col_cnt;
-        w_primed_next   = w_primed;
         w_data_dly_next = w_data_dly;
         o_vld_next      = o_vld;
         o_eof_next      = o_eof;
-        
-        w_core_rdy    = 0;
+        w_core_rdy      = 0;
         w_bank_update   = 0;
+        w_bank_read     = 0;
 
         case (w_state)
             FILL : begin
-                w_core_rdy = 1;
+                o_vld_next = 0;
+                o_eof_next = 0;
+                w_state_next = FILL;
 
                 if (w_sb_vld) begin
+                    // AXI handshake with the skid buffer
+                    w_core_rdy      = 1;
                     w_bank_update   = 1;
                     w_data_dly_next = w_sb_data;
 
-                    // Row/Col Pointer Management
-                    if (w_sb_eor) begin
-                        w_col_cnt_next = 0;
-                        if (w_sb_eof) begin
-                            w_row_ptr_next = 0;
-                            w_primed_next  = 0;
-                        end else if (w_row_ptr == KERNEL_H - 1) begin
-                            w_row_ptr_next = 0;
-                            w_primed_next  = 1;
-                        end else begin
-                            w_row_ptr_next = w_row_ptr + 1;
-                        end
-                    end else begin
-                        w_col_cnt_next = w_col_cnt + 1;
-                    end
+                    update_ptrs(
+                        w_sb_eor,
+                        w_sb_eof,
+                        w_col_cnt,
+                        w_row_ptr
+                    );
 
-                    // State Transitions
+                    // early eof triggres reset
                     if (w_sb_eof) begin
-                        w_state_next = FLUSH;
-                        o_vld_next   = (w_primed); 
-                        o_eof_next   = 1;
-                    end else if (w_primed || (w_sb_eor && w_row_ptr == KERNEL_H - 1)) begin
-                        w_state_next = READY;
-                        o_vld_next   = 1;
-                        o_eof_next   = 0;
-                    end else begin
-                        w_state_next = FILL;
-                        o_vld_next   = 0;
+                        w_state_next  = FLUSH;
+                        o_eof_next    = 1;
+                    // if we are about to fill the last row, we are almost
+                    // ready to start outputting, move to stall
+                    end else if (w_row_ptr_next == KERNEL_H - 1) begin
+                        w_state_next = STALL;
                     end
-                end else begin
-                    o_vld_next = 0; 
                 end
             end
+            STALL : begin
 
+                // if we have new data, update the state
+                if (w_sb_vld) begin
+                    // AXI handshake with the skid buffer
+                    w_core_rdy      = 1;
+                    o_vld_next      = 1;
+                    w_bank_update   = 1;
+                    w_bank_read     = 1;
+                    w_data_dly_next = w_sb_data;
+
+                    // ptr update
+                    update_ptrs(
+                        w_sb_eor,
+                        w_sb_eof,
+                        w_col_cnt,
+                        w_row_ptr
+                    );
+
+                    // if we hit an eof, flush the pipeline
+                    eof_check(
+                        w_sb_eof
+                    );
+
+                // still waiting for new data
+                end else begin
+                    o_vld_next   = 0;
+                    w_state_next = STALL;
+                end
+            end
             READY : begin
-                w_core_rdy = 1; 
-                
-                case ({w_sb_vld, i_rdy})
-                    2'b10: begin // Stall: Valid input exists, downstream blocked
-                        w_state_next = READY;
-                        w_core_rdy = 0; // Hold inputs
-                        o_vld_next   = 1; // Keep output valid
-                    end
-                    2'b01: begin // Drain: Downstream ready, Input dried up
-                        w_state_next = STALL; // Move to STALL
-                        o_vld_next   = 0;     // Output becomes invalid
-                        w_core_rdy = 1;     // Keep listening for input
-                    end
-                    2'b11: begin // Flow: Both ready
-                        w_bank_update   = 1;
-                        w_data_dly_next = w_sb_data;
-                        
-                        // Pointer Updates (Same as FILL)
-                        if (w_sb_eor) begin
-                            w_col_cnt_next = 0;
-                            if (w_sb_eof) begin
-                                w_row_ptr_next = 0;
-                                w_primed_next  = 0;
-                            end else if (w_row_ptr == KERNEL_H - 1) begin
-                                w_row_ptr_next = 0;
-                                w_primed_next  = 1;
-                            end else begin
-                                w_row_ptr_next = w_row_ptr + 1;
-                            end
-                        end else begin
-                            w_col_cnt_next = w_col_cnt + 1;
-                        end
 
-                        if (w_sb_eof) begin
-                            w_state_next = FLUSH;
-                            o_eof_next   = 1;
-                        end else begin
-                            w_state_next = READY;
-                            o_eof_next   = 0;
-                        end
-                        o_vld_next = 1;
+                case ({w_sb_vld, i_rdy})
+                    // input is ready, but output is not
+                    // let the skid buffer catch it
+                    2'b10: begin
+                        w_state_next = READY;
+                        o_vld_next   = 1;
+                        w_core_rdy   = 0;
                     end
-                    2'b00: begin // Idle: Neither ready
+                    // drains output, move back to stall
+                    2'b01: begin
+                        w_state_next = STALL;
+                        o_vld_next   = 0;
+                        w_core_rdy   = 1;
+                    end
+                    // both are ready
+                    2'b11: begin
+                        o_vld_next      = 1;
+                        w_core_rdy      = 1;
+                        w_bank_update   = 1;
+                        w_bank_read     = 1;
+                        w_data_dly_next = w_sb_data;
+
+                        // update the pointers
+                        update_ptrs(
+                            w_sb_eor,
+                            w_sb_eof,
+                            w_col_cnt,
+                            w_row_ptr
+                        );
+
+                        // update state depending on if eof is present
+                        eof_check(
+                            w_sb_eof
+                        );
+                    end
+                    // nothing happened, hold output steady
+                    2'b00: begin
                          w_state_next = READY;
                          o_vld_next   = 1;
-                         w_core_rdy = 0;
+                         w_core_rdy   = 0;
                     end
                 endcase
             end
-
-            STALL : begin
-                w_core_rdy = 1; // Always ready to accept resumption
-                
-                if (w_sb_vld) begin
-                    // RESUMPTION: We have new data. We must process it NOW.
-                    w_bank_update   = 1;
-                    w_data_dly_next = w_sb_data;
-
-                    // Pointer Logic (Must duplicate here to process the incoming pixel)
-                    if (w_sb_eor) begin
-                        w_col_cnt_next = 0;
-                        if (w_sb_eof) begin
-                            w_row_ptr_next = 0;
-                            w_primed_next  = 0;
-                        end else if (w_row_ptr == KERNEL_H - 1) begin
-                            w_row_ptr_next = 0;
-                            w_primed_next  = 1;
-                        end else begin
-                            w_row_ptr_next = w_row_ptr + 1;
-                        end
-                    end else begin
-                        w_col_cnt_next = w_col_cnt + 1;
-                    end
-
-                    // Exit Stall
-                    if (w_sb_eof) begin
-                        w_state_next = FLUSH;
-                        o_eof_next   = 1;
-                    end else begin
-                        w_state_next = READY;
-                        o_eof_next   = 0;
-                    end
-                    o_vld_next = 1; // Valid again
-                end else begin
-                    // Still waiting for data
-                    w_state_next = STALL;
-                    o_vld_next   = 0;
-                end
-            end
-
             FLUSH : begin
                 w_core_rdy = 0;
                 if (!o_vld || i_rdy) begin
@@ -242,19 +221,51 @@ module line_buffer #(
                     w_state_next   = FILL;
                     w_row_ptr_next = 0;
                     w_col_cnt_next = 0;
-                    w_primed_next  = 0;
                 end
             end
         endcase
     end
+
+    function void update_ptrs (
+        input                  sb_eor,
+        input                  sb_eof,
+        input      [CNT_W-1:0] cur_col,
+        input      [PTR_W-1:0] cur_row
+    );
+
+        // update pointer values
+        if (sb_eor) begin
+            w_col_cnt_next = 0;
+            if (sb_eof || (cur_row == KERNEL_H - 1)) begin
+                w_row_ptr_next = 0;
+            end else begin
+                w_row_ptr_next = cur_row + 1;
+            end
+        end else begin
+            w_col_cnt_next = cur_col + 1;
+        end
+
+    endfunction
+
+    function void eof_check (
+        input            sb_eof
+    );
+
+        if (sb_eof) begin
+            w_state_next = FLUSH;
+            o_eof_next   = 1;
+        end else begin
+            w_state_next = READY;
+            o_eof_next   = 0;
+        end
+
+    endfunction
 
     ////////////////////////////////////////////////
     // internal row bank
     ////////////////////////////////////////////////
 
     wire [DATA_W-1:0] w_bank_out [0:KERNEL_H-1];
-
-    wire w_bank_read = (w_state == READY) || (w_state == FILL && w_sb_vld);
 
     genvar i;
     generate

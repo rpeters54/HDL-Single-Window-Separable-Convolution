@@ -54,6 +54,16 @@ module col_pe #(
         .i_rdy   (w_core_rdy)
     );
 
+    reg [31:0] counter;
+
+    always @(posedge i_clk) begin
+        if (i_rst) begin
+            counter <= 0;
+        end else if (i_rdy && o_vld) begin
+            counter <= counter + 1;
+        end
+    end
+
     /////////////////////////////////////////////////////////////////
     //
     // Input Register [Stage 1]
@@ -167,7 +177,7 @@ module col_pe #(
                     w_state_next   = FILL;
                 end else if (i_rdy) begin
                     // if the adder pipeline is empty, reset
-                    if (w_vld_cnt <= 0) begin
+                    if (w_vld_cnt <= 1) begin
                         w_vld_cnt_next = 0;
                         w_vld_next     = 0;
                         w_state_next   = FILL;
