@@ -1,0 +1,38 @@
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc: mode bmc
+bmc: depth 20
+bmc: expect pass
+
+prove: mode prove
+prove: depth 20
+prove: expect pass
+
+cover: mode cover
+cover: depth 20
+cover: expect pass
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal col_pe.v
+read -formal skid_buffer.v
+read -formal da_conv_core.v
+read -formal lut_mul.v
+read -formal carry_save_adder.v
+read -formal full_adder.v
+prep -top col_pe
+
+[files]
+../../rtl/defines.vh
+../../rtl/col_pe.v
+../../rtl/skid_buffer.v
+../../rtl/da_conv_core.v
+../../rtl/lut_mul.v
+../../rtl/carry_save_adder.v
+../../rtl/full_adder.v

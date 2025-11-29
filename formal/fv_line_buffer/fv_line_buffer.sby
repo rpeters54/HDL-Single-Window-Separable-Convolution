@@ -1,0 +1,31 @@
+[tasks]
+bmc
+prove
+cover
+
+[options]
+bmc: mode bmc
+bmc: depth 20
+bmc: expect pass
+
+prove: mode prove
+prove: depth 20
+prove: expect pass
+
+cover: mode cover
+cover: depth 20
+cover: expect pass
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal row_bank.v
+read -formal line_buffer.v
+read -formal skid_buffer.v
+prep -top line_buffer
+
+[files]
+../../rtl/row_bank.v
+../../rtl/line_buffer.v
+../../rtl/skid_buffer.v
