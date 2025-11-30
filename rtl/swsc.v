@@ -1,16 +1,16 @@
 `timescale 1ns/1ps
 
 module swsc #(
-    parameter       DATA_W    = 8,
-    parameter       KERNEL_H  = 7,
-    parameter       MAX_IMG_W = 640,
-    parameter [4:0] WEIGHT_0  = 5'sd1,
-    parameter [4:0] WEIGHT_1  = -5'sd2,
-    parameter [4:0] WEIGHT_2  = 5'sd3,
-    parameter [4:0] WEIGHT_3  = -5'sd4,
-    parameter [4:0] WEIGHT_4  = 5'sd5,
-    parameter [4:0] WEIGHT_5  = -5'sd6,
-    parameter [4:0] WEIGHT_6  = 5'sd7
+    parameter              DATA_W    =  8,
+    parameter              KERNEL_H  =  7,
+    parameter              MAX_IMG_W =  640,
+    parameter signed [4:0] WEIGHT_0  =  5'sd1,
+    parameter signed [4:0] WEIGHT_1  = -5'sd2,
+    parameter signed [4:0] WEIGHT_2  =  5'sd3,
+    parameter signed [4:0] WEIGHT_3  = -5'sd4,
+    parameter signed [4:0] WEIGHT_4  =  5'sd5,
+    parameter signed [4:0] WEIGHT_5  = -5'sd6,
+    parameter signed [4:0] WEIGHT_6  =  5'sd7
 ) (
     input                   i_clk,  // input clk
     input                   i_rst,  // reset the system

@@ -11,12 +11,12 @@ module tb_swsc;
     
     // Weights (Separable Gaussian-like or Edge detection)
     parameter [4:0] W0 = 5'sd1;
-    parameter [4:0] W1 = -5'sd2;
-    parameter [4:0] W2 = 5'sd3;
-    parameter [4:0] W3 = -5'sd4;
-    parameter [4:0] W4 = 5'sd5;
-    parameter [4:0] W5 = -5'sd6;
-    parameter [4:0] W6 = 5'sd7;
+    parameter [4:0] W1 = 5'sd3;
+    parameter [4:0] W2 = 5'sd7;
+    parameter [4:0] W3 = 5'sd10;
+    parameter [4:0] W4 = 5'sd7;
+    parameter [4:0] W5 = 5'sd3;
+    parameter [4:0] W6 = 5'sd1;
 
     reg clk = 0;
     reg rst = 1;
@@ -106,7 +106,7 @@ module tb_swsc;
                     end
 
                     // IMPULSE: Set pixel to 10 at (10,10), else 0
-                    if (r == 10 && c == 10) i_data <= 8'd10; 
+                    if (r == 10 && c == 10) i_data <= 8'd255; 
                     else                    i_data <= 8'd0;
 
                     // Drive Data

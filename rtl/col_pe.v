@@ -2,15 +2,15 @@
 `include "defines.vh"
 
 module col_pe #(
-    parameter       DATA_W    =  8,
-    parameter       KERNEL_H  =  7,
-    parameter [4:0] WEIGHT_0  =  5'sd1,
-    parameter [4:0] WEIGHT_1  = -5'sd2,
-    parameter [4:0] WEIGHT_2  =  5'sd3,
-    parameter [4:0] WEIGHT_3  = -5'sd4,
-    parameter [4:0] WEIGHT_4  =  5'sd5,
-    parameter [4:0] WEIGHT_5  = -5'sd6,
-    parameter [4:0] WEIGHT_6  =  5'sd7
+    parameter              DATA_W    =  8,
+    parameter              KERNEL_H  =  7,
+    parameter signed [4:0] WEIGHT_0  =  5'sd1,
+    parameter signed [4:0] WEIGHT_1  = -5'sd2,
+    parameter signed [4:0] WEIGHT_2  =  5'sd3,
+    parameter signed [4:0] WEIGHT_3  = -5'sd4,
+    parameter signed [4:0] WEIGHT_4  =  5'sd5,
+    parameter signed [4:0] WEIGHT_5  = -5'sd6,
+    parameter signed [4:0] WEIGHT_6  =  5'sd7
 ) (
     input                                 i_clk,  // input clk
     input                                 i_rst,  // reset the system
@@ -54,16 +54,6 @@ module col_pe #(
         .i_rdy   (w_core_rdy)
     );
 
-    reg [31:0] counter;
-
-    always @(posedge i_clk) begin
-        if (i_rst) begin
-            counter <= 0;
-        end else if (i_rdy && o_vld) begin
-            counter <= counter + 1;
-        end
-    end
-
     /////////////////////////////////////////////////////////////////
     //
     // Input Register [Stage 1]
@@ -71,10 +61,11 @@ module col_pe #(
     //
     /////////////////////////////////////////////////////////////////
 
-    localparam NORM_COEFF = $clog2(
-        `ABS(WEIGHT_0) + `ABS(WEIGHT_1) + `ABS(WEIGHT_2) + `ABS(WEIGHT_3) + 
-        `ABS(WEIGHT_4) + `ABS(WEIGHT_5) + `ABS(WEIGHT_6)
+    localparam integer NORM_SUM = `ABS(
+        integer'(WEIGHT_0) + integer'(WEIGHT_1) + integer'(WEIGHT_2) + integer'(WEIGHT_3) + 
+        integer'(WEIGHT_4) + integer'(WEIGHT_5) + integer'(WEIGHT_6)
     );
+    localparam integer NORM_COEFF = (NORM_SUM > 0) ? $clog2(NORM_SUM) : 0;
 
     localparam [1:0] FILL   = 0;
     localparam [1:0] READY  = 1;
