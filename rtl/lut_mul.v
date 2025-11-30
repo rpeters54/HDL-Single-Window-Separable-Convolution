@@ -1,15 +1,15 @@
 `timescale 1ns/1ps
 
 module lut_mul #(
-    parameter       DATA_W    = 8,
-    parameter       KERNEL_H  = 7,
-    parameter [4:0] WEIGHT_0  = 5'd1,
-    parameter [4:0] WEIGHT_1  = 5'd2,
-    parameter [4:0] WEIGHT_2  = 5'd3,
-    parameter [4:0] WEIGHT_3  = 5'd4,
-    parameter [4:0] WEIGHT_4  = 5'd5,
-    parameter [4:0] WEIGHT_5  = 5'd6,
-    parameter [4:0] WEIGHT_6  = 5'd7
+    parameter              DATA_W    =  8,
+    parameter              KERNEL_H  =  7,
+    parameter signed [4:0] WEIGHT_0  =  5'sd1,
+    parameter signed [4:0] WEIGHT_1  = -5'sd2,
+    parameter signed [4:0] WEIGHT_2  =  5'sd3,
+    parameter signed [4:0] WEIGHT_3  = -5'sd4,
+    parameter signed [4:0] WEIGHT_4  =  5'sd5,
+    parameter signed [4:0] WEIGHT_5  = -5'sd6,
+    parameter signed [4:0] WEIGHT_6  =  5'sd7
 ) (
     input         [KERNEL_H-1:0] d,
     output signed [DATA_W-1:0]  sum
@@ -21,8 +21,8 @@ module lut_mul #(
 
     // pad the input and weights with a zero to make it easier to 
     // pre-calculate and index the luts
-    wire        [KERNEL_H:0]      d_pad = { d,       1'b0 };
-    wire signed [KERNEL_H:0][4:0] w_pad = { 
+    wire [KERNEL_H:0]      d_pad = { d,       1'b0 };
+    wire [KERNEL_H:0][4:0] w_pad = { 
         WEIGHT_6, WEIGHT_5, WEIGHT_4, WEIGHT_3,
         WEIGHT_2, WEIGHT_1, WEIGHT_0, 5'd0
     };
@@ -34,7 +34,7 @@ module lut_mul #(
             temp_sum = 0;
             for (integer j = 0; j < 4; j++) begin
                 if (i[j]) begin
-                    temp_sum += integer'(w_pad[j]);
+                    temp_sum += integer'($signed(w_pad[j]));
                 end
             end
             l_rom[i] = temp_sum[7:0];
@@ -43,7 +43,7 @@ module lut_mul #(
             temp_sum = 0;
             for (integer j = 0; j < 4; j++) begin
                 if (i[j]) begin
-                    temp_sum += integer'(w_pad[j+4]);
+                    temp_sum += integer'($signed(w_pad[j+4]));
                 end
             end
             u_rom[i] = temp_sum[7:0];
@@ -63,7 +63,7 @@ module lut_mul #(
         ref_sum = 0;
         for (k = 0; k < 8; k++) begin
             if (d_pad[k]) begin
-                ref_sum = ref_sum + w_pad[k];
+                ref_sum = ref_sum + $signed(w_pad[k]);
             end
         end
     end
