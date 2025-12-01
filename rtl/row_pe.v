@@ -70,13 +70,6 @@ module row_pe #(
     //
     /////////////////////////////////////////////////////////////////
 
-    // normalization coefficient used by the convolution core
-    localparam integer NORM_SUM = `ABS(
-        integer'(WEIGHT_0) + integer'(WEIGHT_1) + integer'(WEIGHT_2) + integer'(WEIGHT_3) + 
-        integer'(WEIGHT_4) + integer'(WEIGHT_5) + integer'(WEIGHT_6)
-    );
-    localparam integer NORM_COEFF = (NORM_SUM > 0) ? $clog2(NORM_SUM) : 0;
-
     localparam [1:0] FILL   = 0;
     localparam [1:0] READY  = 1;
     localparam [1:0] FLUSH  = 2;
@@ -251,8 +244,7 @@ module row_pe #(
         .WEIGHT_3   (WEIGHT_3),
         .WEIGHT_4   (WEIGHT_4),
         .WEIGHT_5   (WEIGHT_5),
-        .WEIGHT_6   (WEIGHT_6),
-        .NORM_COEFF (NORM_COEFF)
+        .WEIGHT_6   (WEIGHT_6)
     ) u_core (
         .i_clk      (i_clk),
         .i_rst      (i_rst),
@@ -262,7 +254,6 @@ module row_pe #(
     );
 
 
-`ifdef FORMAL
 
     /////////////////////////////////////////////////////////////////
     // Formal Verification
@@ -271,29 +262,31 @@ module row_pe #(
     reg f_past_valid = 0;
     always @(posedge i_clk) begin
         f_past_valid <= 1;
-        if(i_rst) f_past_valid <= 0;
     end
 
     always @(*) if (!f_past_valid) assume(i_rst);
 
-    // 1. Recreate the shift enable logic for the ghost buffer
-    wire f_shift_en;
-    assign f_shift_en = 
+    // normalization coefficient used by the convolution core
+    localparam integer NORM_SUM = `ABS(
+        integer'(WEIGHT_0) + integer'(WEIGHT_1) + integer'(WEIGHT_2) + integer'(WEIGHT_3) + 
+        integer'(WEIGHT_4) + integer'(WEIGHT_5) + integer'(WEIGHT_6)
+    );
+    localparam integer NORM_COEFF = (NORM_SUM > 0) ? $clog2(NORM_SUM) : 0;
+
+    // recreate the shift enable logic for the ghost buffer
+    wire f_shift_en = 
         (w_state == FILL && w_sb_vld) ||
         (w_state == READY && w_sb_vld && i_rdy) ||
         (w_state == FLUSH && i_rdy);
 
-    // 2. History Buffer
-    // Tracks what entered the computation pipeline.
-    // If flushing, we shift in ZEROES to simulate the "flush" behavior.
-    reg [7:0] past_inputs [0:TOTAL_STAGES]; 
+    // tracks what entered the computation pipeline.
+    reg [DATA_W-1:0] past_inputs [0:TOTAL_STAGES]; 
     integer k;
-
     always @(posedge i_clk) begin
         if (i_rst) begin
             for(k=0; k<=TOTAL_STAGES; k=k+1) past_inputs[k] <= 0;
         end else if (f_shift_en) begin
-            if (w_state == FLUSH) past_inputs[0] <= 8'd0;
+            if (w_state == FLUSH) past_inputs[0] <= {DATA_W{1'd0}};
             else                  past_inputs[0] <= w_sb_data;
 
             for(k=0; k<TOTAL_STAGES; k=k+1) 
@@ -301,7 +294,7 @@ module row_pe #(
         end
     end
 
-    // 3. Golden Model
+    // golden model of da_conv_core
     reg signed [18:0] golden_sum;
     always @(*) begin
         golden_sum = 0;
@@ -320,8 +313,8 @@ module row_pe #(
         golden_sum = golden_sum + $signed({1'b0, past_inputs[9]}) * $signed(WEIGHT_6);
     end
 
-    reg signed [18:0] golden_norm;
-    reg       [7:0]   golden_pixel;
+    reg signed [18:0]       golden_norm;
+    reg        [DATA_W-1:0] golden_pixel;
     always @(*) begin
         golden_norm = golden_sum >>> NORM_COEFF;
         if (golden_norm > 255)      golden_pixel = 255;
@@ -333,7 +326,7 @@ module row_pe #(
 
     // Data Accuracy
     always @(posedge i_clk) begin
-        if (f_past_valid && !i_rst && o_vld) begin
+        if (f_past_valid && o_vld) begin
             assert(o_data == golden_pixel);
         end
     end
@@ -362,23 +355,32 @@ module row_pe #(
         end
     end
 
-    // Protocol Assertions
+    // eof and eor checks
     always @(posedge i_clk) if (f_past_valid && !i_rst) begin
         if (!o_vld) begin
             assert(!o_eor);
             assert(!o_eof);
         end
+        if (w_sb_eor && w_sb_vld && w_core_rdy) begin
+            assert(w_state_next == FLUSH);
+        end
         if (o_eof) assert(o_eor);
     end
 
-    // Stall Stability
+    // axi assertions
     always @(posedge i_clk) begin
-        if (f_past_valid && !i_rst && $past(o_vld) && !$past(i_rdy)) begin
-            assert(o_data == $past(o_data));
+        // if data is not accepted it must remain steady
+        if (f_past_valid && $past(!i_rst) && $past(o_vld) && !$past(i_rdy)) begin
+            assert($stable(o_data));
             assert(o_vld);
         end
     end
 
-`endif
+
+    always @(posedge i_clk) if (f_past_valid && $past(!i_rst)) begin
+        cover(i_rdy && o_vld);
+        cover(!i_rdy && o_vld);
+    end
+
 
 endmodule

@@ -226,6 +226,14 @@ module line_buffer #(
         endcase
     end
 
+    //////////////////////////////////////
+    // FSM Helper Functions
+    //////////////////////////////////////
+    // NOTE: these have been factored out of the FSM
+    // because they are repeated multiple times across different states
+
+    // update the column counter and row pointer
+    // wrapping around when eor is reached
     function void update_ptrs (
         input                  sb_eor,
         input                  sb_eof,
@@ -247,6 +255,7 @@ module line_buffer #(
 
     endfunction
 
+    // move to flush if eof is hit
     function void eof_check (
         input            sb_eof
     );
@@ -262,7 +271,7 @@ module line_buffer #(
     endfunction
 
     ////////////////////////////////////////////////
-    // internal row bank
+    // internal row banks
     ////////////////////////////////////////////////
 
     wire [DATA_W-1:0] w_bank_out [0:KERNEL_H-1];

@@ -65,7 +65,7 @@ module swsc #(
 
     ////////////////////////////////////////////////////
     // Line Buffer: stores row outputs and organizes
-    // outputs for the column processor
+    // them for the column processor
     ////////////////////////////////////////////////////
 
     wire                            w_line_buf_vld;
@@ -97,7 +97,6 @@ module swsc #(
     ////////////////////////////////////////////////////
     // Column Processing Engine: handles col-wise conv
     ////////////////////////////////////////////////////
-
 
     col_pe #(
         .DATA_W     (DATA_W),

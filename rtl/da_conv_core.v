@@ -10,8 +10,7 @@ module da_conv_core #(
     parameter signed [4:0] WEIGHT_3   = 5'sd4,
     parameter signed [4:0] WEIGHT_4   = 5'sd5,
     parameter signed [4:0] WEIGHT_5   = 5'sd6,
-    parameter signed [4:0] WEIGHT_6   = 5'sd7,
-    parameter signed       NORM_COEFF = 0
+    parameter signed [4:0] WEIGHT_6   = 5'sd7
 ) (
     input                                 i_clk,
     input                                 i_rst,
@@ -35,19 +34,17 @@ module da_conv_core #(
     wire signed [DATA_W-1:0]               w_lut_sums  [0:DATA_W-1];
 
     // transpose the input vector to groups of bits at the same place
-    genvar pixel_idx, bit_idx;
     generate
-        for (bit_idx = 0; bit_idx < DATA_W; bit_idx++) begin
-            for (pixel_idx = 0; pixel_idx < KERNEL_H; pixel_idx++) begin
+        for (genvar bit_idx = 0; bit_idx < DATA_W; bit_idx++) begin : gen_bit
+            for (genvar pixel_idx = 0; pixel_idx < KERNEL_H; pixel_idx++) begin : gen_pixel
                 assign w_lut_addrs[bit_idx][pixel_idx] = i_vector[pixel_idx][bit_idx];
             end
         end
     endgenerate
 
     // pipe input data through the lut mul unit
-    genvar i;
     generate
-        for (i = 0; i < 8; i++) begin : gen_lut_mul
+        for (genvar i = 0; i < DATA_W; i++) begin : gen_lut_mul
             lut_mul #(
                 .DATA_W      (DATA_W),
                 .KERNEL_H    (KERNEL_H),
@@ -80,9 +77,9 @@ module da_conv_core #(
     carry_save_adder #(
         .XLEN(XLEN_S0_TOP-1)
     ) u_carry_save_adder_1 (
-        .a      (`SEXT(w_lut_sums[0], 8, XLEN_S0_TOP-1, 0)),
-        .b      (`SEXT(w_lut_sums[1], 8, XLEN_S0_TOP-1, 1)),
-        .c      (`SEXT(w_lut_sums[2], 8, XLEN_S0_TOP-1, 2)),
+        .a      (`SEXT(w_lut_sums[0], DATA_W, XLEN_S0_TOP-1, 0)),
+        .b      (`SEXT(w_lut_sums[1], DATA_W, XLEN_S0_TOP-1, 1)),
+        .c      (`SEXT(w_lut_sums[2], DATA_W, XLEN_S0_TOP-1, 2)),
         .sum    (w_csa_1_out[`SUM]),
         .c_out  (w_csa_1_out[`CARRY])
     );
@@ -90,9 +87,9 @@ module da_conv_core #(
     carry_save_adder #(
         .XLEN(XLEN_S0_MID-1)
     ) u_carry_save_adder_2 (
-        .a      (`SEXT(w_lut_sums[3], 8, XLEN_S0_MID-1, 3)),
-        .b      (`SEXT(w_lut_sums[4], 8, XLEN_S0_MID-1, 4)),
-        .c      (`SEXT(w_lut_sums[5], 8, XLEN_S0_MID-1, 5)),
+        .a      (`SEXT(w_lut_sums[3], DATA_W, XLEN_S0_MID-1, 3)),
+        .b      (`SEXT(w_lut_sums[4], DATA_W, XLEN_S0_MID-1, 4)),
+        .c      (`SEXT(w_lut_sums[5], DATA_W, XLEN_S0_MID-1, 5)),
         .sum    (w_csa_2_out[`SUM]),
         .c_out  (w_csa_2_out[`CARRY])
     );
@@ -104,8 +101,8 @@ module da_conv_core #(
     assign w_stage_0_mid_next[0] = `SEXT(w_csa_2_out[`SUM],   XLEN_S0_MID-1, XLEN_S0_MID, 0);
     assign w_stage_0_mid_next[1] = `SEXT(w_csa_2_out[`CARRY], XLEN_S0_MID-1, XLEN_S0_MID, 1);
 
-    assign w_stage_0_low_next[0] = `SEXT(w_lut_sums[6], 8, XLEN_S0_LOW, 6);
-    assign w_stage_0_low_next[1] = `SEXT(w_lut_sums[7], 8, XLEN_S0_LOW, 7);
+    assign w_stage_0_low_next[0] = `SEXT(w_lut_sums[6], DATA_W, XLEN_S0_LOW, 6);
+    assign w_stage_0_low_next[1] = `SEXT(w_lut_sums[7], DATA_W, XLEN_S0_LOW, 7);
 
     /////////////////////////////////////////////////////////////////
     //
@@ -217,9 +214,11 @@ module da_conv_core #(
     // shifting the sumout by some normalization value computed from the
     // weights. If the value exceeds 8-bits, we will saturate to 255 (8-bit
     // max).
-    //
-    // NOTE: I had to move this value external so that it would evaluate
-    // properly for testing. Look at row_pe to see how it is calculated
+    localparam integer NORM_SUM = `ABS(
+        integer'(WEIGHT_0) + integer'(WEIGHT_1) + integer'(WEIGHT_2) + integer'(WEIGHT_3) + 
+        integer'(WEIGHT_4) + integer'(WEIGHT_5) + integer'(WEIGHT_6)
+    );
+    localparam integer NORM_COEFF = (NORM_SUM > 0) ? $clog2(NORM_SUM) : 0;
 
     assign w_sumout_norm = w_sumout >>> NORM_COEFF;
 
@@ -254,11 +253,93 @@ module da_conv_core #(
 
     // truncate output to between 0-255
     always @(*) begin
-        if      (w_sumout_norm > 255)  o_data = 8'd255;
-        else if (w_sumout_norm < 0)    o_data = 8'd0;
-        else                           o_data = w_sumout_norm[7:0];
+        if      (w_sumout_norm > 255)  o_data = 255;
+        else if (w_sumout_norm < 0)    o_data = 0;
+        else                           o_data = w_sumout_norm[DATA_W-1:0];
     end
 
+
+    /////////////////////////////////////////////////////////////////
+    // Formal Verification
+    /////////////////////////////////////////////////////////////////
+
+    reg f_past_valid = 0;
+    always @(posedge i_clk) begin
+        f_past_valid <= 1;
+    end
+
+    integer f_vld_cnt;
+    always @(posedge i_clk) begin
+        if (i_rst) begin
+            f_vld_cnt <= 0;
+        end else if (f_vld_cnt < 3) begin
+            f_vld_cnt <= f_vld_cnt + 1;
+        end
+    end
+
+
+    always @(*) if (!f_past_valid) assume(i_rst);
+    always @(*) if (!f_past_valid) assume(f_vld_cnt == 0);
+
+    localparam TOTAL_STAGES = 3;
+    // tracks what entered the computation pipeline.
+    reg [KERNEL_H-1:0][DATA_W-1:0] past_inputs [0:TOTAL_STAGES-1]; 
+    integer k;
+    always @(posedge i_clk) begin
+        if (i_rst) begin
+            for(k=0; k<=TOTAL_STAGES; k=k+1) past_inputs[k] <= 0;
+        end else if (i_pipe_en) begin
+            for(k=1; k<=TOTAL_STAGES; k=k+1) past_inputs[k] <= past_inputs[k-1];
+            past_inputs[0] <= i_vector;
+        end
+    end
+
+    // golden model
+    reg signed [XLEN_SUMOUT-1:0] golden_sum;
+    always @(*) begin
+        golden_sum = 0;
+        // core latency is 3
+        golden_sum = golden_sum + $signed({1'b0, past_inputs[TOTAL_STAGES-1][0]}) * $signed(WEIGHT_0);
+        golden_sum = golden_sum + $signed({1'b0, past_inputs[TOTAL_STAGES-1][1]}) * $signed(WEIGHT_1);
+        golden_sum = golden_sum + $signed({1'b0, past_inputs[TOTAL_STAGES-1][2]}) * $signed(WEIGHT_2);
+        golden_sum = golden_sum + $signed({1'b0, past_inputs[TOTAL_STAGES-1][3]}) * $signed(WEIGHT_3);
+        golden_sum = golden_sum + $signed({1'b0, past_inputs[TOTAL_STAGES-1][4]}) * $signed(WEIGHT_4);
+        golden_sum = golden_sum + $signed({1'b0, past_inputs[TOTAL_STAGES-1][5]}) * $signed(WEIGHT_5);
+        golden_sum = golden_sum + $signed({1'b0, past_inputs[TOTAL_STAGES-1][6]}) * $signed(WEIGHT_6);
+    end
+
+    reg signed [XLEN_SUMOUT-1:0] golden_norm;
+    reg        [DATA_W-1:0]      golden_pixel;
+    always @(*) begin
+        golden_norm = golden_sum >>> NORM_COEFF;
+        if (golden_norm > 255)      golden_pixel = 255;
+        else if (golden_norm < 0)   golden_pixel = 0;
+        else                        golden_pixel = golden_norm[DATA_W-1:0];
+    end
+
+    // verify pixel matches golden model
+    always @(posedge i_clk) begin
+        if (f_vld_cnt == 3) begin
+            assert(o_data == golden_pixel);
+        end
+    end
+
+    // if pipe is not enabled and not resetting, all signals should hold steady
+    always @(posedge i_clk) begin
+        if (f_past_valid && $past(!i_rst) && $past(!i_pipe_en)) begin
+            for (integer i = 0; i < 2; i++) begin
+                assert($stable(w_stage_0_top[i]));
+                assert($stable(w_stage_0_mid[i]));
+                assert($stable(w_stage_0_low[i]));
+                assert($stable(w_stage_1_top[i]));
+                assert($stable(w_stage_1_low[i]));
+            end
+            for (integer i = 0; i < 3; i++) begin
+                assert($stable(w_stage_2[i]));
+            end
+            assert($stable(o_data));
+        end
+    end
 
 
 endmodule
