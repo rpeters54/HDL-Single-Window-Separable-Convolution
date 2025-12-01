@@ -1,10 +1,6 @@
-+incdir+/Users/rileypeters/CalPoly/CPE523/final/formal/fv_col_pe/fv_col_pe_bmc/src
-+incdir+/Users/rileypeters/CalPoly/CPE523/final/formal/fv_skid_buffer/fv_skid_buffer_bmc/src
 +incdir+/Users/rileypeters/CalPoly/CPE523/final/rtl
 +incdir+/Users/rileypeters/CalPoly/CPE523/final/tests/tb_custom
 +incdir+/Users/rileypeters/CalPoly/CPE523/final/tests/tb_swsc
-+incdir+/Users/rileypeters/CalPoly/CPE523/final/formal/fv_col_pe/fv_col_pe_bmc/src
-+incdir+/Users/rileypeters/CalPoly/CPE523/final/formal/fv_skid_buffer/fv_skid_buffer_bmc/src
 +incdir+/Users/rileypeters/CalPoly/CPE523/final/rtl
 +incdir+/Users/rileypeters/CalPoly/CPE523/final/tests/tb_custom
 +incdir+/Users/rileypeters/CalPoly/CPE523/final/tests/tb_swsc

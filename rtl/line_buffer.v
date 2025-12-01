@@ -45,17 +45,6 @@ module line_buffer #(
         .o_data  ({w_sb_eor, w_sb_eof, w_sb_data})
     );
 
-
-    reg [31:0] counter;
-
-    always @(posedge i_clk) begin
-        if (i_rst) begin
-            counter <= 0;
-        end else if (i_rdy && o_vld) begin
-            counter <= counter + 1;
-        end
-    end
-
     ////////////////////////////////////////////////
     // input demux
     ////////////////////////////////////////////////
